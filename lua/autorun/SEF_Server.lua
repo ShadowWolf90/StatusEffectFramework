@@ -1,6 +1,5 @@
 if SERVER then
 
-    --[[
     hook.Add("Think", "EntityStatusEffectsThink", function()
         for _, ent in ents.Iterator() do
             if (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()) and ent.activeEffects then
@@ -91,7 +90,7 @@ if SERVER then
     end, nil, "Reloads or creates all hooks in StatusEffects table.")
 
 
-    hook.Add("Think", "TransferStatusEffects", function()
+    hook.Add("Think", "StatusEffectsManagerTransfer", function()
         local Ents = SortStatusEffects()
 
         local JSON = util.TableToJSON(Ents)
@@ -102,6 +101,5 @@ if SERVER then
         net.WriteData(Compressed)
         net.Broadcast()
     end)
-    ]]--
 
 end
