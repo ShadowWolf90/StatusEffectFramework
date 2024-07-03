@@ -1,18 +1,22 @@
 if SERVER then
 
     hook.Add("Think", "EntityStatusEffectsThink", function()
-        for _, ent in ents.Iterator() do
-            if (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()) and ent.activeEffects then
-                for effectName, effectData in pairs(ent.activeEffects) do
+        for entID, effects in pairs(EntActiveEffects) do
+            local Affected = Entity(entID)
+            if IsValid(Affected) and (Affected:IsPlayer() or Affected:IsNPC() or Affected:IsNextBot()) then
+                for effectName, effectData in pairs(effects) do
                     if CurTime() - effectData.StartTime <= effectData.Duration then
-                        effectData.Function(ent, effectData.Duration, unpack(effectData.Args))
+                        effectData.Function(Affected, effectData.Duration, unpack(effectData.Args))
                     else
-                        ent:RemoveEffect(effectName)
+                        Affected:RemoveEffect(effectName)
                     end
                 end
+            elseif not IsValid(Affected) then
+                EntActiveEffects[entID] = nil
             end
         end
     end)
+    
 
     local function CreateEffectHooks()
         for effect, effectData in pairs(StatusEffects) do
@@ -47,59 +51,25 @@ if SERVER then
     end
 
     hook.Add("PlayerDeath", "RemoveStatusEffects", function(victim, inflictor, attacker)
-        if IsValid(victim) and victim.activeEffects then
-            for effectName, _ in pairs(victim.activeEffects) do
+        if IsValid(victim) and EntActiveEffects[victim:EntIndex()] then
+            for effectName, _ in pairs(EntActiveEffects[victim:EntIndex()]) do
                 victim:RemoveEffect(effectName)
             end
         end
     end)
 
-    local function ObtainStatusEffects(ent)
-
-        local EntTeam
-        if ent:IsPlayer() or ent.IsLambdaPlayer then
-            EntTeam = ent:Team()
-        else
-            EntTeam = "NPC"
-        end
-
-        return {
-            pos = ent:WorldSpaceCenter() + Vector(0, 0, 50),
-            ID = ent:GetCreationID(),
-            EntTeam = EntTeam,
-            EntActiveEffects = ent.activeEffects
-        }
-    end
-
-    local function SortStatusEffects()
-        local EntDatas = {}
-
-        for _, ent in ents.Iterator() do
-            if ent.activeEffects and next(ent.activeEffects) ~= nil then
-                table.insert(EntDatas, ObtainStatusEffects(ent))
+    hook.Add("LambdaOnKilled", "RemoveStatusEffects", function(lambda, dmg, isSilent)
+        if IsValid(lambda) and EntActiveEffects[lambda:EntIndex()] then
+            for effectName, _ in pairs(EntActiveEffects[lambda:EntIndex()]) do
+                lambda:RemoveEffect(effectName)
             end
         end
-
-        return EntDatas
-    end
+    end)
 
     CreateEffectHooks()
 
-    concommand.Add("SEF_createeffecthooks", function(ply, cmd, args)
+    concommand.Add("SEF_CreateEffectHooks", function(ply, cmd, args)
         CreateEffectHooks()
     end, nil, "Reloads or creates all hooks in StatusEffects table.")
-
-
-    hook.Add("Think", "StatusEffectsManagerTransfer", function()
-        local Ents = SortStatusEffects()
-
-        local JSON = util.TableToJSON(Ents)
-        local Compressed = util.Compress(JSON)
-
-        net.Start("StatusEffectTransfer", true)
-        net.WriteUInt(#Compressed, 16)
-        net.WriteData(Compressed)
-        net.Broadcast()
-    end)
 
 end

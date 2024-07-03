@@ -1,4 +1,4 @@
-local function LoadSEFFiles()
+function LoadSEFFiles()
     local folder = "SEF"
     local files, directories = file.Find(folder .. "/*.lua", "LUA")
 
@@ -11,7 +11,7 @@ local function LoadSEFFiles()
         print("[Status Effect Framework] File " .. filename .. " has been loaded.")
     end
 
-    concommand.Add("SEF_createeffecthooks", function(ply, cmd, args)
+    concommand.Add("SEF_Reload", function(ply, cmd, args)
         LoadSEFFiles()
     end, nil, "Reloads whole Status Effect Framework.")
 end

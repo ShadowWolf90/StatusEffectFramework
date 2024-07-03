@@ -4,13 +4,34 @@ if CLIENT then
     local ActiveEffects = {}
     AllEntEffects = {}
 
-    CreateClientConVar("SEF_StatusEffectX", 655, true, false, "X position of Status Effects applied on you.", 0, ScrW())
-    CreateClientConVar("SEF_StatusEffectY", 950, true, false, "Y position of Status Effects applied on you.", 0, ScrH())
+    CreateClientConVar("SEF_StatusEffectX", 50, true, false, "X position of Status Effects applied on you.", 0, ScrW())
+    CreateClientConVar("SEF_StatusEffectY", 925, true, false, "Y position of Status Effects applied on you.", 0, ScrH())
     CreateClientConVar("SEF_StatusEffectDisplay", 1, true, false, "Shows effects on players/NPCS/Lambdas.", 0, 1)
 
-    local function DrawStatusEffectTimer(x, y, effectName, duration, startTime)
+    local function SplitCamelCase(str)
+        return str:gsub("(%l)(%u)", "%1 %2")
+    end
+
+    local function DrawStatusEffectTimer(x, y, effectName, effectDesc, duration, startTime)
         local effect = StatusEffects[effectName]
         if not effect then return end
+
+        local mouseX = gui.MouseX()
+        local mouseY = gui.MouseY()
+
+        surface.SetFont("TargetIDSmall")
+
+        local FormattedName = SplitCamelCase(effectName)
+        local TextColor
+        local NameW, NameH = surface.GetTextSize(FormattedName)
+        local DescW, DescH = 0, 0
+        if effectDesc != nil and effectDesc != "" then
+            DescW, DescH = surface.GetTextSize(effectDesc)
+        end
+        local DurW, DurH = surface.GetTextSize("Duration: " .. duration .. " seconds")
+        local TotalWidth = math.max(NameW, DurW, DescW)
+        local TotalHeight = NameH + DurH + DescH
+
     
         local icon = Material(effect.Icon)
         local radius = 22
@@ -36,8 +57,10 @@ if CLIENT then
     
         if StatusEffects[effectName].Type == "BUFF" then
             surface.SetDrawColor(30, 255, 0, 255)
+            TextColor = Color(30, 255, 0, 255)
         else
             surface.SetDrawColor(255, 0, 0, 255)
+            TextColor = Color(255, 0, 0, 255)
         end
         draw.NoTexture()
         surface.DrawPoly(vertices)
@@ -50,6 +73,19 @@ if CLIENT then
         surface.SetMaterial(icon)
         surface.SetDrawColor(255, 255, 255, 255)
         surface.DrawTexturedRect(centerX - 16, centerY - 16, 32, 32)
+
+        local remainingTime = duration - (CurTime() - startTime)
+        draw.SimpleText(math.Round(remainingTime), "TargetIDSmall", centerX, centerY + 20, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_LEFT)
+
+        if mouseX >= centerX - 16 and mouseX <= centerX + 16 and mouseY >= centerY - 16 and mouseY <= centerY + 16 then
+            surface.SetDrawColor(0, 0, 0, 155)
+            surface.DrawRect(mouseX, mouseY + 30, TotalWidth + 10, TotalHeight)
+            draw.SimpleText(FormattedName, "TargetIDSmall", mouseX + 5, mouseY + 30, Color(255,208,0), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            if DescH > 0 then
+                draw.DrawText(effectDesc, "TargetIDSmall", mouseX + 5, mouseY + 30 + NameH, TextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+            end
+            draw.SimpleText("Duration: " .. duration .." seconds", "TargetIDSmall", mouseX + 5, mouseY + 45 + DescH, TextColor, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+        end
     end
 
     local function DrawStatusEffectTimerMini(x, y, effectName, duration, startTime)
@@ -95,6 +131,12 @@ if CLIENT then
         surface.SetDrawColor(255, 255, 255, 255)
         surface.DrawTexturedRectRotated(centerX, centerY, 18, 18, 0)
     end
+
+    local function WithinDistance(A, target, dist)
+        local Dist = dist * dist
+
+        return A:GetPos():DistToSqr( target ) < Dist
+    end
     
 
     local function DisplayStatusEffects()
@@ -114,51 +156,51 @@ if CLIENT then
 
             local remainingTime = effectData.Duration - (CurTime() - effectData.StartTime)
 
-            DrawStatusEffectTimer(StatusEffX , StatusEffY, effectName, effectData.Duration, effectData.StartTime)
-
-            draw.SimpleText(math.Round(remainingTime), "TargetIDSmall", StatusEffX , StatusEffY + 20, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_LEFT)
+            DrawStatusEffectTimer(StatusEffX , StatusEffY, effectName, effectData.Desc, effectData.Duration, effectData.StartTime)
 
             StatusEffX  = StatusEffX  + 50
 
         end
 
         if ShowDisplay then
-            for i, ent in ipairs(AllEntEffects) do
-                local EntPos = ent.pos
-                local EntActiveEffects = ent.EntActiveEffects
-                local ID = ent.ID
-                local EntTeam = ent.EntTeam
-                local EffectAmount = table.Count(EntActiveEffects)
-                local ScreenPos = EntPos:ToScreen()
-                
-                -- Calculate the starting x position to center the effects
-                local totalWidth = (EffectAmount - 1) * 25  -- total width of all effects with 25 unit spacing
-                local startX = ScreenPos.x - (totalWidth / 2)
+            for entID, statuseffects in pairs(AllEntEffects) do
+                local ent = Entity(entID)
+                if IsValid(ent) and entID ~= LocalPlayer():EntIndex() then
+                    local PosClient = ent:GetPos() + Vector(0, 0, 80)
+                    local screenPos = PosClient:ToScreen()
+                    local effectAmount = table.Count(statuseffects)
+                    local TotalWidth = (effectAmount - 1) * 25
+                    local startX = screenPos.x - (TotalWidth / 2)
 
-                local function WithinDistance(A, target, dist)
-                    local Dist = dist * dist
-                    
-                    return A:GetPos():DistToSqr( target ) < Dist
-                end
-            
-                -- Perform a trace line to check visibility
-                local tr = util.TraceLine({
-                    start = LocalPlayer():EyePos(),
-                    endpos = EntPos,
-                    filter = LocalPlayer()
-                })
-            
-                for effect, data in SortedPairsByMemberValue(EntActiveEffects, "Duration", true) do
-                    if tr.HitPos == EntPos and ID ~= LocalPlayer():GetCreationID() then
-                        if WithinDistance(LocalPlayer(), EntPos, 500) and EntTeam == "NPC" then
-                            DrawStatusEffectTimerMini(startX, ScreenPos.y, effect, data.Duration, data.StartTime)
-                        elseif WithinDistance(LocalPlayer(), EntPos, 500) and EntTeam == LocalPlayer():Team() and not THROverHead then
-                            DrawStatusEffectTimerMini(startX, ScreenPos.y, effect, data.Duration, data.StartTime)
-                        elseif WithinDistance(LocalPlayer(), EntPos, 500) and EntTeam ~= LocalPlayer():Team() then
-                            DrawStatusEffectTimerMini(startX, ScreenPos.y, effect, data.Duration, data.StartTime)
+                    local tr = util.TraceLine({
+                        start = plyEyePos,
+                        endpos = EntPos,
+                        filter = LocalPlayer()
+                    })
+    
+                    for effectName, effectData in SortedPairsByMemberValue(statuseffects, "Duration", true) do
+                        local effectCount = table.Count(statuseffects)
+                        if tr.HitPos and WithinDistance(LocalPlayer(), PosClient, 500) then
+                            local remainingTime = effectData.Duration - (CurTime() - effectData.StartTime)
+                            if remainingTime > 0 then
+                                if THROverHead and (ent:IsNPC() or ent:IsNextBot() and not ent.IsLambdaPlayer) then
+                                    DrawStatusEffectTimerMini(startX, screenPos.y, effectName, effectData.Duration, effectData.StartTime)
+                                elseif not THROverHead then
+                                    DrawStatusEffectTimerMini(startX, screenPos.y, effectName, effectData.Duration, effectData.StartTime)
+                                end
+                                startX = startX + 25
+                            else
+                                -- Usuwamy efekt, jeśli czas jego trwania się skończył
+                                AllEntEffects[entID][effectName] = nil
+                                if table.Count(AllEntEffects[entID]) == 0 then
+                                    AllEntEffects[entID] = nil  -- Usuwamy podtabelę, jeśli nie ma już żadnych efektów
+                                end
+                            end
                         end
                     end
-                    startX = startX + 25
+                elseif not IsValid(ent) then
+                    print("[Status Effect Framework] Removed data about no longer valid entity.")
+                    AllEntEffects[entID] = nil
                 end
             end
         end
@@ -168,11 +210,13 @@ if CLIENT then
 
     net.Receive("StatusEffectAdd", function()
         local EffectName = net.ReadString()
+        local Desc = net.ReadString()
         local Duration = net.ReadFloat()
         local StartTime = CurTime()
 
         local StatusEntry = {
             EffectName = EffectName,
+            Desc = Desc,
             Duration = Duration,
             StartTime = StartTime
         }
@@ -186,14 +230,34 @@ if CLIENT then
     end)
     
 
-    net.Receive("StatusEffectTransfer", function()
+    net.Receive("StatusEffectEntityAdd", function()
+        local EntID = net.ReadInt(32)
+        local EffectName = net.ReadString()
+        local Duration = net.ReadFloat()
+        local TimeApply = net.ReadFloat()
 
-        local DataLength = net.ReadUInt(16)
-        local Compressed = net.ReadData(DataLength)
-        local Decompressed = util.Decompress(Compressed)
+        if not AllEntEffects[EntID] then
+            AllEntEffects[EntID] = {}
+        end
 
-        AllEntEffects = util.JSONToTable(Decompressed)
-        
+        AllEntEffects[EntID][EffectName] = {
+            Duration = Duration,
+            StartTime = TimeApply
+        }
+    end)
+
+    net.Receive("StatusEffectEntityRemove", function()
+        local EntID = net.ReadInt(32)
+        local EffectName = net.ReadString()
+
+        if AllEntEffects[EntID] and AllEntEffects[EntID][EffectName] then
+            AllEntEffects[EntID][EffectName] = nil
+            
+            -- Usuń podtabelę jeśli nie ma już żadnych efektów
+            if next(AllEntEffects[EntID]) == nil then
+                AllEntEffects[EntID] = nil
+            end
+        end
     end)
 
     hook.Add("HUDPaint", "DisplayStatusEffectsHUD", DisplayStatusEffects)
